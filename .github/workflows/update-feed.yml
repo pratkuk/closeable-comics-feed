@@ -1,0 +1,46 @@
+name: update-feed
+
+# Bake the hub's public-safe comic feed into data/strips.json for GitHub Pages.
+# Runs after the comic-daily pipeline windows (writers-room repo), plus manual.
+
+on:
+  schedule:
+    - cron: "45 5 * * *"  # 11:15 IST — after the primary comic-daily window
+    - cron: "15 7 * * *"  # 12:45 IST — after the backup window
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-feed
+  cancel-in-progress: false
+
+jobs:
+  bake:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch feed from the hub
+        env:
+          HUB_URL: ${{ vars.HUB_URL || 'https://factory-hub-two.vercel.app' }}
+          COMICS_WORKER_SECRET: ${{ secrets.COMICS_WORKER_SECRET }}
+        run: |
+          [ -n "$COMICS_WORKER_SECRET" ] || { echo "::error::COMICS_WORKER_SECRET secret not set"; exit 1; }
+          curl -fsS -H "Authorization: Bearer $COMICS_WORKER_SECRET" "$HUB_URL/api/comics/feed" -o /tmp/feed.json
+          python3 -m json.tool /tmp/feed.json > /dev/null  # sanity: valid JSON
+          mv /tmp/feed.json data/strips.json
+
+      - name: Commit if changed
+        run: |
+          git config user.name "comic-feed-bot"
+          git config user.email "actions@github.com"
+          git add data/strips.json
+          if git diff --cached --quiet; then
+            echo "feed unchanged"
+          else
+            git commit -m "chore: feed update $(date -u +%FT%H:%MZ)"
+            git push
+          fi
