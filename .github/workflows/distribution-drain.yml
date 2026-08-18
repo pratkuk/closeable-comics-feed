@@ -1,0 +1,63 @@
+name: distribution-drain
+
+# Fans published posts out to their Meta destinations and stages the WhatsApp
+# hand-off. Spec: factory-hub docs/superpowers/specs/2026-08-19-distribution-spine-design.md
+#
+# WHY THIS LIVES IN THIS REPO, not factory-hub:
+#   factory-hub is PRIVATE, so its Actions minutes are capped at 2000/month and
+#   already committed to five workflows — that budget is what cut the comics
+#   pipeline to a single daily firing. This repo is PUBLIC, where Actions
+#   minutes are unlimited and free. Nothing secret lives here: just a bearer
+#   token from repo secrets and a URL.
+#
+# WHY ONCE A DAY, not a poller:
+#   All ten hub databases share ONE Neon compute. A half-hourly cron was
+#   measured at ~120 billed hours/month (see the disabled player-tick.yml) and
+#   a 60-second poller exhausted the Neon quota outright on 2026-07-30, 500ing
+#   every section of the hub.
+#
+#   It is also unnecessary. Every destination offset is a whole number of days
+#   after the first tick, so this single firing drains today's Instagram Story,
+#   yesterday's Facebook post and the day-before's Threads post together. The
+#   stagger lives in each row's due_at, not in how often this runs.
+#
+#   The drain selects due_at <= now(), so a delayed run catches up rather than
+#   dropping work — GitHub deprioritizes scheduled runs under load, with gaps of
+#   2-6 hours observed. The fan-out's unique key makes a double firing a no-op.
+
+on:
+  schedule:
+    - cron: "0 15 * * *" # 15:00 UTC = 20:30 IST, 30 min after strips publish
+  workflow_dispatch:
+
+jobs:
+  drain:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Drain due distributions
+        run: |
+          curl -sf -X POST "$HUB_URL/api/distribute/drain" \
+            -H "Authorization: Bearer $DISTRIBUTION_WORKER_SECRET" \
+            -w "\nHTTP %{http_code}\n"
+        env:
+          HUB_URL: https://factory-hub-two.vercel.app
+          DISTRIBUTION_WORKER_SECRET: ${{ secrets.DISTRIBUTION_WORKER_SECRET }}
+
+      - name: Check the Meta token health
+        # A credential that expires silently takes the whole fan-out down with
+        # no error anywhere. A headless permission stall went unnoticed for 16
+        # days in this project once; this step is the cheap insurance.
+        run: |
+          curl -sf "$HUB_URL/api/distribute/token-health" \
+            -H "Authorization: Bearer $DISTRIBUTION_WORKER_SECRET" \
+            -w "\nHTTP %{http_code}\n" | tee health.json
+          if grep -q '"healthy":false' health.json; then
+            echo "::error::Meta token is unhealthy — the fan-out is degraded"
+            exit 1
+          fi
+          if grep -q '"warn":true' health.json; then
+            echo "::warning::Meta token is close to expiry — rotate it"
+          fi
+        env:
+          HUB_URL: https://factory-hub-two.vercel.app
+          DISTRIBUTION_WORKER_SECRET: ${{ secrets.DISTRIBUTION_WORKER_SECRET }}
