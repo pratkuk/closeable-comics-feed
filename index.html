@@ -29,8 +29,22 @@
   .strip .badge { font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; padding: 3px 8px; border-radius: 99px; background: var(--magenta); color: #fff; }
   .strip .badge.qa { background: #2f9e6e; }
   .strip h2 { font-size: 19px; margin: 0 0 6px; line-height: 1.35; }
-  .panels { display: flex; gap: 12px; overflow-x: auto; padding: 4px 0 10px; scroll-snap-type: x mandatory; }
-  .panels img { height: 460px; border-radius: 10px; scroll-snap-align: start; box-shadow: 0 1px 5px rgba(0,0,0,.15); }
+  /* One tile per swipe, each filling the column — the same carousel a phone gets on
+     Instagram. The old rule sized panels by HEIGHT (460px), so on a phone a tile
+     rendered ~368px wide inside a horizontally-scrolling rail and the reader had to
+     drag sideways through a strip. Width-based snapping makes a swipe land exactly one
+     tile, which is what the tiles are now designed for (docs/comic-evals.md P-series). */
+  .panels {
+    display: flex; gap: 12px; overflow-x: auto; padding: 4px 0 10px;
+    scroll-snap-type: x mandatory; scroll-padding: 0;
+    scrollbar-width: thin; -webkit-overflow-scrolling: touch;
+  }
+  .panels img {
+    width: 100%; height: auto; flex: 0 0 100%;
+    border-radius: 10px; scroll-snap-align: center; scroll-snap-stop: always;
+    box-shadow: 0 1px 5px rgba(0,0,0,.15);
+  }
+  .swipe-hint { color: var(--muted); font-size: 12px; letter-spacing: .04em; margin: 2px 2px 0; }
   .caption { color: var(--muted); font-size: 14.5px; line-height: 1.55; white-space: pre-wrap; margin: 8px 2px 0; }
   .empty { text-align: center; color: var(--muted); padding: 80px 20px; font-size: 15px; }
   footer { text-align: center; color: var(--muted); font-size: 12.5px; padding: 20px; }
@@ -77,6 +91,7 @@
           `<div class="meta"><span class="date">${s.date}</span>${badge}</div>` +
           (s.hook ? `<h2></h2>` : '') +
           `<div class="panels">${panels}</div>` +
+          (s.panels.length > 1 ? `<p class="swipe-hint">${s.panels.length} tiles · swipe →</p>` : '') +
           (s.caption ? `<p class="caption"></p>` : '');
         if (s.hook) card.querySelector('h2').textContent = s.hook;
         if (s.caption) card.querySelector('.caption').textContent = s.caption;

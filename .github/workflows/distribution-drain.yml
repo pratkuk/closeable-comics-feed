@@ -43,20 +43,18 @@ jobs:
           HUB_URL: https://factory-hub-two.vercel.app
           DISTRIBUTION_WORKER_SECRET: ${{ secrets.DISTRIBUTION_WORKER_SECRET }}
 
-      - name: Check the Meta token health
-        # A credential that expires silently takes the whole fan-out down with
-        # no error anywhere. A headless permission stall went unnoticed for 16
-        # days in this project once; this step is the cheap insurance.
+      - name: Check the Buffer token health
+        # Every destination publishes through Buffer now, so one rotating token
+        # is the single point of failure for the whole fan-out — and it lives in
+        # four places. A headless permission stall went unnoticed for 16 days in
+        # this project once; this step is the cheap insurance.
         run: |
           curl -sf "$HUB_URL/api/distribute/token-health" \
             -H "Authorization: Bearer $DISTRIBUTION_WORKER_SECRET" \
             -w "\nHTTP %{http_code}\n" | tee health.json
           if grep -q '"healthy":false' health.json; then
-            echo "::error::Meta token is unhealthy — the fan-out is degraded"
+            echo "::error::Buffer token is unhealthy — the fan-out is degraded"
             exit 1
-          fi
-          if grep -q '"warn":true' health.json; then
-            echo "::warning::Meta token is close to expiry — rotate it"
           fi
         env:
           HUB_URL: https://factory-hub-two.vercel.app
